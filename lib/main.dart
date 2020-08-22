@@ -1,14 +1,14 @@
 import 'dart:io';
 import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission/permission.dart';
 
 void main() => runApp(MyApp());
 
 class MyApp extends StatelessWidget {
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -29,88 +29,104 @@ class MyHomePage extends StatefulWidget {
   @override
   _MyHomePageState createState() => _MyHomePageState();
 }
-//https://bearbeargo.com/posts/flutter-web-async-load-font/
-class _MyHomePageState extends State<MyHomePage> {
-  String key = 'FZZJ-YGYTKJW';
-  // 字体放在asset目录了，需要push到sd卡
-  String value =
-      '/storage/emulated/0/meituanwaimaibussiness/font/7fc81fa544398d4b5abbf97fa90554bd.ttf';
 
-  @override
-  void initState() {
-    super.initState();
-    getPermissionsStatus();
-  }
+class _MyHomePageState extends State<MyHomePage> {
+  String downloadProgress = "0.0";
+  bool complete = false;
+  String path = '/storage/emulated/0/Montserrat-Light.ttf';
 
   @override
   Widget build(BuildContext context) {
+    final textStyle = complete
+        ? TextStyle(
+            fontSize: 20,
+            fontFamily: 'Montserrat-Light',
+            fontWeight: FontWeight.bold,
+            color: Colors.red,
+          )
+        : TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.normal,
+            color: Colors.black,
+          );
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title),
       ),
-      body: GestureDetector(
-        onTap: () {
-          setState(() {
-            debugPrint('---->>重新加载');
-          });
-        },
-        child: Center(
-          child: Container(
-            width: 100,
-            height: 70,
-            color: Colors.green,
-            child: Wrap(
-              direction: Axis.vertical,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              runAlignment: WrapAlignment.center,
-              alignment: WrapAlignment.center,
-              children: <Widget>[
-                Container(
-                  color: Colors.yellow,
-                  child: Text(
-                    '年后',
-                    style: TextStyle(fontFamily: key),
-                  ),
-                ),
-              ],
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Text(
+              'download Progress:',
             ),
-          ),
+            Text(
+              downloadProgress,
+              style: textStyle,
+            ),
+          ],
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        child: Text('按钮'),
         onPressed: () {
-          getPermissionsStatus();
+          downloadFont();
         },
-      ),
+        tooltip: 'Increment',
+        child: Icon(Icons.add),
+      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 
-  /**
-   *  读取字体数据
-   */
-  Future<void> readFont(String key, String value) {
-    debugPrint('---->>key:$key,value:${value}');
-    var fontLoader = FontLoader(key);
-    fontLoader.addFont(getCustomFont(value));
-    return fontLoader.load().catchError((e) {
-      debugPrint('---->>load:$e');
-    });
+  Future<bool> isDirectoryExist(String path) async {
+    File file = File(path);
+    return await file.exists();
   }
 
-  Future<ByteData> getCustomFont(String path) {
-    File file = File(value);
-    Future<Uint8List> future = file.readAsBytes().catchError((e) {
-      debugPrint('---->>readAsBytes:$e');
-    });
-    Future<ByteData> data =
-        future.then((value) => value.buffer.asByteData()).catchError((e) {
-      debugPrint('---->>getCustomFont:$e');
-    });
-    return data;
-//    return DefaultAssetBundle.of(context).load(path).catchError((e) {
-//      debugPrint('---->>getCustomFont:$e');
-//    });
+  Future<void> createDirectory(String path) async {
+    Directory directory = Directory(path);
+    directory.create();
+  }
+
+  void downloadFont() async {
+    String url = 'https://raw.githubusercontent.com/google/fonts/master/ofl/montserrat/Montserrat-Light.ttf';
+    String savePath = (await getExternalStorageDirectory()).path;
+    String fontPath = "$savePath/Montserrat-Light.ttf";
+    File file = File(fontPath);
+    if (!file.existsSync()) {
+      file.createSync();
+    }
+    debugPrint('---->>fontPath:$fontPath');
+
+    OnDownloadProgress onDownloadProgress = (int received, int total) {
+      double progress = received / total;
+      downloadProgress = '$progress';
+      checkProgress(progress, fontPath);
+    };
+
+    Dio dio = new Dio();
+    await dio.download(url, fontPath, onProgress: onDownloadProgress);
+  }
+
+  void checkProgress(double progress, String savePath) async {
+    if (progress == 1) {
+      complete = true;
+      downloadProgress = '成功了';
+      await readFont(savePath);
+    }
+
+    setState(() {});
+  }
+
+  Future<void> readFont(String path) async {
+    var fontLoader = FontLoader("Montserrat-Light");
+    fontLoader.addFont(getCustomFont(path));
+    await fontLoader.load();
+  }
+
+  Future<ByteData> getCustomFont(String path) async {
+    ByteData byteData = await rootBundle.load(path);
+    return byteData;
   }
 
   getPermissionsStatus() async {
@@ -119,14 +135,9 @@ class _MyHomePageState extends State<MyHomePage> {
     String message = '';
     var permissions = await Permission.requestPermissions(permissionNames);
     permissions.forEach((permission) {
-      message +=
-          '${permission.permissionName}: ${permission.permissionStatus}\n';
+      message += '${permission.permissionName}: ${permission.permissionStatus}\n';
       debugPrint('---->>message:$message');
-      readFont(key, value).then((_) {
-        debugPrint('---->>readFont   then:');
-      }).catchError((e) {
-        debugPrint('---->>catchError:$e');
-      });
+      downloadFont();
     });
   }
 }
